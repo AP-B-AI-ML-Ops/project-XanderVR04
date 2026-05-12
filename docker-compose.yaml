@@ -1,0 +1,97 @@
+services:
+  database:
+    build: ./backend-database
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    env_file:
+      - ./backend-database/.env
+
+  experiment-tracking:
+    build: ./backend-service-experiment-tracking
+    ports:
+      - "5000:5000"
+    depends_on:
+      - database
+    environment:
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - mlflow-artifacts:/mlflow/artifacts
+
+  orchestration:
+    build: ./backend-service-orchestration
+    ports:
+      - "4200:4200"
+
+  web-service:
+    build: ./web-service
+    ports:
+      - "9696:9696"
+    depends_on:
+      - experiment-tracking
+      - orchestration
+    volumes:
+      - batch-data:/batch-data
+      - mlflow-artifacts:/mlflow/artifacts
+    environment:
+      - MLFLOW_TRACKING_URI=http://experiment-tracking:5000
+      - MODEL_NAME=wind-production-model
+      - MODEL_VERSION=1
+
+  batch-service:
+    build: ./batch-service
+    depends_on:
+      - orchestration
+      - experiment-tracking
+    volumes:
+      - batch-data:/batch-data
+      - ./data:/data
+      - mlflow-artifacts:/mlflow/artifacts
+    environment:
+      - MLFLOW_TRACKING_URI=http://experiment-tracking:5000
+      - MODEL_NAME=wind-production-model
+      - DATA_DIR=/data
+      - BATCH_DATA_DIR=/batch-data
+      - RMSE_THRESHOLD=400000
+      - PREFECT_API_URL=http://orchestration:4200/api
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=database
+
+  train:
+    build: ./train
+    depends_on:
+      - experiment-tracking
+      - orchestration
+    volumes:
+      - ./data:/data
+      - mlflow-artifacts:/mlflow/artifacts
+    environment:
+      - MLFLOW_TRACKING_URI=http://experiment-tracking:5000
+      - DATA_DIR=/data
+      - RMSE_THRESHOLD=400000
+      - PREFECT_API_URL=http://orchestration:4200/api
+
+  grafana:
+    image: grafana/grafana
+    restart: unless-stopped
+    ports:
+      - "3400:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning/dashboards:/opt/grafana/dashboards:ro
+      - batch-data:/batch-data
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+volumes:
+  postgres-data:
+  batch-data:
+  mlflow-artifacts:
+  grafana-data-config-datasources:
+  grafana-data-config-dashboards:
+  grafana-data-dashboards:

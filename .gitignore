@@ -1,0 +1,22 @@
+# Environment files
+.env
+**/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Data
+*.csv
+*.parquet
+
+# MLflow
+mlflow.db
+mlruns/
+
+# Jupyter
+.ipynb_checkpoints/
