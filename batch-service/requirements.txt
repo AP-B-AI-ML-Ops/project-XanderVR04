@@ -1,0 +1,11 @@
+prefect
+mlflow
+psycopg2-binary
+pandas
+numpy
+scikit-learn
+requests
+evidently
+sqlalchemy
+sqlalchemy-utils
+pyarrow
