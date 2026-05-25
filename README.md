@@ -1,187 +1,158 @@
-# Wind Production Forecasting — MLOps Project
+# Wind Production Forecasting
 
-## Dataset(s)
+This project predicts hourly wind energy production (in kWh) for Flanders over the next 24 hours using weather forecast data as input. It is built as a full end-to-end MLOps system covering training, deployment, scheduling, and monitoring.
 
-This project uses two datasets produced by the **Data Engineering** course pipelines:
+**What is predicted:** total wind energy production per hour for Flanders (`vlaanderen wind kwh`).
 
-| File | Source | Description |
-|---|---|---|
-| `data/wind.csv` | Open Meteo ECMWF, Geo.be | Daily wind speed (km/h) at 10m and 30m height for the Antwerp region |
-| `data/production.csv` | Energie Vlaanderen, Elia | Hourly solar and wind energy production (kWh) for Flanders |
+**Inputs:** daily wind speed at 10m and 30m height, combined with time-based features (hour of day, day of week, month, weekend flag, wind speed ratio).
 
-The two datasets are joined on date. Wind speed features (`geo_windspeed_10m`, `geo_windspeed_30m`) are forward-filled from daily to hourly granularity. The joined dataset covers **March 2025 to March 2026** (~9,000 hourly rows) — the period with the best data availability across all columns.
-
-**Training data:** 80% of the joined dataset (chronological split, ~7,300 rows)
-**Test data:** 20% of the joined dataset (~1,800 rows)
-**New data for inference:** the same wind CSV is used by the batch service to simulate scheduled inference. In production, this would be replaced by live ECMWF forecast data from the Open Meteo API.
+**Why this is useful:** grid operators and energy traders need short-term wind forecasts to make balancing decisions, such as when to activate backup capacity or trade excess energy.
 
 ---
 
-## Project Explanation
+## Project Components
 
-This project builds an **end-to-end MLOps system** that predicts hourly wind energy production (in kWh) for Flanders over the next 24 hours, using weather forecast data as input.
+### Training (`train/`)
+Trains a Random Forest regressor across 4 hyperparameter configurations. Each run is tracked in MLflow with metrics and parameters logged. The best model is registered in the MLflow model registry. After the initial training run, the container stays alive as a Prefect deployment so it can be triggered automatically for retraining.
 
-**What is predicted:** `vlaanderen wind kwh` — the total wind energy production in Flanders per hour.
+### Web Service (`web-service/`)
+A Flask REST API running on port 9696. Accepts wind speed and date features as input and returns 24 hourly wind production predictions in kWh. The model is loaded from the MLflow registry on startup.
 
-**Inputs:** daily wind speed at 10m and 30m height, enriched with time-based features (hour of day, day of week, month, weekend flag, wind speed ratio).
+### Batch Service (`batch-service/`)
+A Prefect flow scheduled to run daily at 06:00 UTC. On each run it loads the latest registered model, runs predictions over the full dataset, computes RMSE and MAE, saves results to PostgreSQL, generates an Evidently data drift report, and triggers retraining if RMSE exceeds 400,000 kWh.
 
-**Output:** 24 hourly wind production predictions in kWh, plus a daily total.
+### Experiment Tracking (`backend-service-experiment-tracking/`)
+An MLflow server backed by PostgreSQL. Stores all training runs, metrics, parameters, and registered model versions.
 
-**Why this is useful:** grid operators and energy traders need reliable short-term wind forecasts to make balancing decisions. By knowing how much wind energy will be produced in the next 24 hours, they can plan when to activate backup capacity or sell excess energy.
+### Orchestration (`backend-service-orchestration/`)
+A Prefect server that manages and schedules the batch flow and retraining deployment.
 
-The system uses a **Random Forest regressor** trained with MLFlow experiment tracking and hyperparameter search across 4 configurations. The best model is registered in the MLFlow model registry and served via two deployment modes:
-
-- **Web service:** a REST API that accepts weather forecast data and returns 24-hour predictions on demand
-- **Batch service:** a scheduled Prefect pipeline that runs daily, generates predictions, computes error metrics, and monitors for model drift using Evidently
-
----
-
-## Flows & Actions
-
-### 1. Training Flow (`train/train.py`)
-**Trigger:** manual (`docker compose up --force-recreate --no-deps train`)
-**Steps:**
-1. Load and join `wind.csv` and `production.csv` on date
-2. Engineer features (hour, day of week, month, weekend flag, wind speed ratio)
-3. Split data 80/20 (chronological)
-4. Train 4 Random Forest configurations, tracking each run in MLFlow
-5. Register the best model in the MLFlow model registry
-
-### 2. Web Service (`web-service/predict.py`)
-**Trigger:** HTTP POST request to `http://localhost:9696/predict`
-**Input:**
-```json
-{
-    "geo_windspeed_10m": 5.2,
-    "geo_windspeed_30m": 7.1,
-    "day_of_week": 0,
-    "month": 3,
-    "is_weekend": 0
-}
-```
-**Output:**
-```json
-{
-    "predictions_kwh": [578436.17, "..."],
-    "total_kwh": 15375825.69
-}
-```
-
-### 3. Batch Flow (`batch-service/batch_flow.py`)
-**Trigger:** Prefect schedule (daily at 06:00) or manual via Prefect UI
-**Steps:**
-1. Load the latest registered model from MLFlow
-2. Load wind and production data, engineer features
-3. Run predictions across the full dataset
-4. Compute RMSE and MAE against actual production values
-5. Save predictions as parquet to `/batch-data/`
-6. Save metrics to PostgreSQL `metrics.batch_metrics` table
-7. Generate Evidently drift report (HTML + metrics to `metrics.evidently_metrics`)
-8. Automatically trigger the `wind-production-training` retraining deployment via Prefect if RMSE exceeds 400,000 kWh threshold
+### Monitoring (`grafana/`)
+A Grafana dashboard connected to PostgreSQL. Displays RMSE and MAE over time, latest metric values, predicted vs actual production, and prediction error percentage per day.
 
 ---
 
 ## Services
 
-| Service | URL | Description |
+| Service | URL | Credentials |
 |---|---|---|
-| MLFlow | http://localhost:5000 | Experiment tracking and model registry |
-| Prefect | http://localhost:4200 | Workflow orchestration and scheduling |
-| Grafana | http://localhost:3400 | Monitoring dashboard (login: admin/admin) |
-| Web API | http://localhost:9696 | On-demand forecast REST API |
+| MLflow | http://localhost:5000 | none |
+| Prefect | http://localhost:4200 | none |
+| Grafana | http://localhost:3400 | admin / admin |
+| Web API | http://localhost:9696 | none |
 
 ---
 
 ## How to Run
 
 ### Prerequisites
-- Docker Desktop
+
+- Docker Desktop (running)
 - Git
 
 ### 1. Clone the repository
+
 ```bash
 git clone <your-repo-url>
 cd project-xandervr04
 ```
 
 ### 2. Configure environment
+
 ```bash
 cp backend-database/.env.example backend-database/.env
 cp .env.example .env
 ```
-Edit both `.env` files and set `POSTGRES_USER` and `POSTGRES_PASSWORD` to the same values in both files. Use only letters and numbers in the password (no special characters).
+
+Open both `.env` files and set `POSTGRES_USER` and `POSTGRES_PASSWORD` to the same values in both. Use only letters and numbers in the password.
 
 ### 3. Add data files
-Place the following CSV files in the `data/` folder:
+
+Place the following files in the `data/` folder:
+
 - `wind.csv`
 - `production.csv`
 
-### 4. Start core infrastructure
+### 4. Start the infrastructure
+
 ```bash
 docker compose up -d --build database experiment-tracking orchestration grafana
 ```
-Check that Prefect and MLflow are ready:
+
+Wait until Prefect is ready:
+
 ```bash
 docker compose logs orchestration --tail=20
-docker compose logs experiment-tracking --tail=20
 ```
-Continue when you see `Check out the dashboard at http://0.0.0.0:4200` in the orchestration logs.
+
+Continue when you see `Check out the dashboard at http://0.0.0.0:4200`.
 
 ### 5. Train the model
+
 ```bash
 docker compose up -d --build --force-recreate --no-deps train
 ```
-The container trains immediately on startup, then stays alive to serve the retraining deployment. Check the logs to know when training is done:
+
+Follow the logs to know when training is done:
+
 ```bash
 docker compose logs train --follow
 ```
-Continue when you see `Model registered: wind-production-model`. Press `Ctrl+C` to stop following the logs.
+
+Continue when you see `Model registered: wind-production-model`. Press `Ctrl+C` to stop following.
 
 ### 6. Start the web service and batch service
+
 ```bash
 docker compose up -d --build --force-recreate --no-deps web-service batch-service
 ```
-Check that both services started correctly:
+
+Verify both started correctly:
+
 ```bash
 docker compose logs web-service --tail=20
 docker compose logs batch-service --tail=20
 ```
-Continue when you see `Running on http://0.0.0.0:9696` in the web-service logs and `Serving flow 'wind-batch-prediction'` in the batch-service logs.
+
+The web service is ready when you see `Running on http://0.0.0.0:9696`. The batch service is ready when you see `Worker started`.
 
 ### 7. Trigger the first batch run
-Go to http://localhost:4200/dashboard → **Deployments** → `wind-batch-daily` → **Run** → **Quick Run**.
 
-Check the run completed successfully:
+Open http://localhost:4200 and go to **Deployments** -> `wind-batch-daily` -> **Run** -> **Quick Run**.
+
+Check it completed:
+
 ```bash
 docker compose logs batch-service --tail=30
 ```
+
 You should see `RMSE ... within threshold` or `Retraining deployment triggered`.
 
 ### 8. Test the web API
 
-**Windows (cmd):**
+**Windows:**
 ```
 curl -X POST http://localhost:9696/predict -H "Content-Type: application/json" -d "{\"geo_windspeed_10m\": 5.2, \"geo_windspeed_30m\": 7.1, \"month\": 3, \"day_of_week\": 0, \"is_weekend\": 0}"
 ```
 
-**Linux/Mac:**
+**Linux / Mac:**
 ```bash
 curl -X POST http://localhost:9696/predict \
   -H "Content-Type: application/json" \
   -d '{"geo_windspeed_10m": 5.2, "geo_windspeed_30m": 7.1, "month": 3, "day_of_week": 0, "is_weekend": 0}'
 ```
 
-### 9. View monitoring dashboard
-Open Grafana at http://localhost:3400 and navigate to the **Wind Production Monitoring** dashboard.
+### 9. View the monitoring dashboard
+
+Open Grafana at http://localhost:3400, log in with `admin` / `admin`, and open the **Wind Production Monitoring** dashboard.
 
 ---
 
-## Dependencies
+## Pre-commit Hooks
 
-All dependencies are pinned inside each service's `requirements.txt`. See individual service folders for details.
+Install locally to run linting and tests before each commit:
 
-Install pre-commit hooks locally:
 ```bash
-pip install pre-commit pylint black isort pytest pandas
-python -m pre_commit install
+pip install pre-commit
+pre-commit install
 ```
