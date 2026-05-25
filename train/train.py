@@ -193,3 +193,4 @@ def train_flow():
 
 if __name__ == "__main__":
     train_flow()
+    train_flow.serve(name="wind-production-training")

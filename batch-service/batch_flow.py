@@ -10,10 +10,10 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
-import requests
 from evidently import DataDefinition, Dataset, Report
 from evidently.presets import DataDriftPreset
 from prefect import flow, task
+from prefect.deployments import run_deployment
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
 
@@ -60,17 +60,18 @@ def get_engine():
 def load_latest_model():
     """Load the latest registered model version from MLFlow."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    response = requests.post(
-        f"{MLFLOW_TRACKING_URI}/api/2.0/mlflow/registered-models/get-latest-versions",
-        json={"name": MODEL_NAME, "stages": ["None"]},
-        timeout=30,
+    client = mlflow.MlflowClient()
+    versions = client.search_model_versions(
+        f"name='{MODEL_NAME}'", order_by=["version_number DESC"], max_results=1
     )
-    versions = response.json().get("model_versions", [])
-    latest_version = versions[-1]["version"]
-    run_id = versions[-1]["run_id"]
-    model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
-    print(f"Loaded model {MODEL_NAME} version {latest_version}")
-    return model, run_id
+    if not versions:
+        raise RuntimeError(
+            f"No registered versions found for model '{MODEL_NAME}'. Run the training pipeline first."
+        )
+    latest = versions[0]
+    model = mlflow.sklearn.load_model(f"runs:/{latest.run_id}/model")
+    print(f"Loaded model {MODEL_NAME} version {latest.version}")
+    return model, latest.run_id
 
 
 @task(name="load-and-prepare-data")
@@ -228,7 +229,7 @@ def run_evidently_report(results: pd.DataFrame):
 
 
 @task(name="check-retraining-trigger")
-def check_retraining_trigger(metrics: dict):
+async def check_retraining_trigger(metrics: dict):
     """Trigger retraining flow if RMSE exceeds threshold."""
     if metrics["rmse"] > RMSE_THRESHOLD:
         print(
@@ -246,6 +247,11 @@ def check_retraining_trigger(metrics: dict):
                 }
             ]
         ).to_sql("batch_metrics", engine, if_exists="append", index=False)
+        # Actually trigger the training deployment (timeout=0 = fire-and-forget)
+        await run_deployment(
+            "wind-production-training/wind-production-training", timeout=0
+        )
+        print("Retraining deployment triggered via Prefect")
     else:
         print(f"RMSE {metrics['rmse']:.0f} within threshold — no retraining needed")
 

@@ -77,7 +77,7 @@ The system uses a **Random Forest regressor** trained with MLFlow experiment tra
 5. Save predictions as parquet to `/batch-data/`
 6. Save metrics to PostgreSQL `metrics.batch_metrics` table
 7. Generate Evidently drift report (HTML + metrics to `metrics.evidently_metrics`)
-8. Trigger retraining flag in DB if RMSE exceeds 400,000 kWh threshold
+8. Automatically trigger the `wind-production-training` retraining deployment via Prefect if RMSE exceeds 400,000 kWh threshold
 
 ---
 
@@ -120,22 +120,42 @@ Place the following CSV files in the `data/` folder:
 ```bash
 docker compose up -d --build database experiment-tracking orchestration grafana
 ```
-Wait ~30 seconds for all services to be ready before continuing.
+Check that Prefect and MLflow are ready:
+```bash
+docker compose logs orchestration --tail=20
+docker compose logs experiment-tracking --tail=20
+```
+Continue when you see `Check out the dashboard at http://0.0.0.0:4200` in the orchestration logs.
 
 ### 5. Train the model
 ```bash
-docker compose up --force-recreate --no-deps train
+docker compose up -d --build --force-recreate --no-deps train
 ```
-Wait for `train-1 exited with code 0` before continuing.
+The container trains immediately on startup, then stays alive to serve the retraining deployment. Check the logs to know when training is done:
+```bash
+docker compose logs train --follow
+```
+Continue when you see `Model registered: wind-production-model`. Press `Ctrl+C` to stop following the logs.
 
 ### 6. Start the web service and batch service
 ```bash
-docker compose up -d --force-recreate --no-deps web-service
-docker compose up -d --force-recreate --no-deps batch-service
+docker compose up -d --build --force-recreate --no-deps web-service batch-service
 ```
+Check that both services started correctly:
+```bash
+docker compose logs web-service --tail=20
+docker compose logs batch-service --tail=20
+```
+Continue when you see `Running on http://0.0.0.0:9696` in the web-service logs and `Serving flow 'wind-batch-prediction'` in the batch-service logs.
 
 ### 7. Trigger the first batch run
 Go to http://localhost:4200/dashboard → **Deployments** → `wind-batch-daily` → **Run** → **Quick Run**.
+
+Check the run completed successfully:
+```bash
+docker compose logs batch-service --tail=30
+```
+You should see `RMSE ... within threshold` or `Retraining deployment triggered`.
 
 ### 8. Test the web API
 

@@ -5,7 +5,6 @@
 import os
 
 import mlflow.sklearn
-import mlflow.tracking
 import pandas as pd
 from flask import Flask, jsonify, request
 
@@ -15,15 +14,16 @@ MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI", "http://experiment-tracking:5000"
 )
 MODEL_NAME = os.getenv("MODEL_NAME", "wind-production-model")
-MODEL_VERSION = os.getenv("MODEL_VERSION", "1")
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-# Load model via run ID so artifact is fetched through the tracking server HTTP API
-client = mlflow.tracking.MlflowClient()
-model_version_info = client.get_model_version(MODEL_NAME, MODEL_VERSION)
-run_id = model_version_info.run_id
-model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
+client = mlflow.MlflowClient()
+versions = client.search_model_versions(
+    f"name='{MODEL_NAME}'", order_by=["version_number DESC"], max_results=1
+)
+latest = versions[0]
+MODEL_VERSION = latest.version
+model = mlflow.sklearn.load_model(f"runs:/{latest.run_id}/model")
 
 
 def build_features(

@@ -2,7 +2,8 @@
 disable = [
     "missing-function-docstring",
     "missing-class-docstring",
-    "C0103"
+    "C0103",
+    "R0801"
 ]
 
 [tool.black]
