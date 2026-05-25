@@ -1,7 +1,3 @@
-"""Wind production forecast REST API."""
-
-# pylint: disable=import-error
-
 import os
 
 import mlflow.sklearn
@@ -33,7 +29,6 @@ def build_features(
     month: int = 1,
     is_weekend: int = 0,
 ) -> pd.DataFrame:
-    """Build a 24-row feature DataFrame for one day of hourly predictions."""
     rows = []
     for hour in range(24):
         rows.append(
@@ -52,30 +47,11 @@ def build_features(
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
     return jsonify({"status": "ok", "model": MODEL_NAME, "version": MODEL_VERSION})
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    Predict wind production for the next 24 hours.
-
-    Expected JSON body:
-    {
-        "geo_windspeed_10m": 5.2,
-        "geo_windspeed_30m": 7.1,
-        "day_of_week": 0,    (optional, 0=Monday ... 6=Sunday)
-        "month": 3,          (optional, 1-12)
-        "is_weekend": 0      (optional, 0 or 1)
-    }
-
-    Returns:
-    {
-        "predictions_kwh": [float, ...],  (24 values, one per hour)
-        "total_kwh": float
-    }
-    """
     data = request.get_json()
 
     if not data:

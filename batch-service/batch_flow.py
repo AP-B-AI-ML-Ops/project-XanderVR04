@@ -1,8 +1,3 @@
-"""Batch prediction and monitoring flow for wind production forecasting."""
-
-# pylint: disable=import-error
-# pylint: disable=line-too-long
-
 import os
 from datetime import datetime, timezone
 
@@ -16,10 +11,6 @@ from prefect import flow, task
 from prefect.deployments import run_deployment
 from sqlalchemy import create_engine
 from sqlalchemy_utils import create_database, database_exists
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
 
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI", "http://experiment-tracking:5000"
@@ -39,26 +30,14 @@ DB_URI = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 REFERENCE_PATH = os.path.join(BATCH_DATA_DIR, "reference.parquet")
 
 
-# ---------------------------------------------------------------------------
-# Database helpers
-# ---------------------------------------------------------------------------
-
-
 def get_engine():
-    """Create database and return SQLAlchemy engine."""
     if not database_exists(DB_URI):
         create_database(DB_URI)
     return create_engine(DB_URI)
 
 
-# ---------------------------------------------------------------------------
-# Tasks
-# ---------------------------------------------------------------------------
-
-
 @task(name="load-latest-model")
 def load_latest_model():
-    """Load the latest registered model version from MLFlow."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = mlflow.MlflowClient()
     versions = client.search_model_versions(
@@ -76,7 +55,6 @@ def load_latest_model():
 
 @task(name="load-and-prepare-data")
 def load_and_prepare_data(data_dir: str) -> pd.DataFrame:
-    """Load wind and production data, join and engineer features."""
     wind_df = pd.read_csv(os.path.join(data_dir, "wind.csv"), na_values=["NULL"])
     prod_df = pd.read_csv(os.path.join(data_dir, "production.csv"))
 
@@ -99,7 +77,6 @@ def load_and_prepare_data(data_dir: str) -> pd.DataFrame:
 
 @task(name="run-batch-predictions")
 def run_batch_predictions(model, df: pd.DataFrame) -> pd.DataFrame:
-    """Run predictions on the full dataset and return results DataFrame."""
     feature_cols = [
         "geo_windspeed_10m",
         "geo_windspeed_30m",
@@ -127,7 +104,6 @@ def run_batch_predictions(model, df: pd.DataFrame) -> pd.DataFrame:
 
 @task(name="compute-metrics")
 def compute_metrics(results: pd.DataFrame) -> dict:
-    """Compute RMSE and MAE from batch results."""
     rmse = float(np.sqrt(np.mean(results["error"] ** 2)))
     mae = float(np.mean(np.abs(results["error"])))
     print(f"Batch RMSE: {rmse:.0f} kWh | MAE: {mae:.0f} kWh")
@@ -136,7 +112,6 @@ def compute_metrics(results: pd.DataFrame) -> dict:
 
 @task(name="save-predictions-parquet")
 def save_predictions_parquet(results: pd.DataFrame):
-    """Save predictions to parquet in the shared batch-data volume."""
     now = datetime.now(timezone.utc)
     path = os.path.join(BATCH_DATA_DIR, f"{now.year:04d}/{now.month:02d}")
     os.makedirs(path, exist_ok=True)
@@ -148,7 +123,6 @@ def save_predictions_parquet(results: pd.DataFrame):
 
 @task(name="save-predictions-to-db")
 def save_predictions_to_db(results: pd.DataFrame):
-    """Save daily aggregated predictions and actuals to PostgreSQL for Grafana."""
     engine = get_engine()
     results["date"] = pd.to_datetime(results["tijd"]).dt.date
     daily = (
@@ -163,7 +137,6 @@ def save_predictions_to_db(results: pd.DataFrame):
 
 @task(name="save-metrics-to-db")
 def save_metrics_to_db(metrics: dict, run_id: str):
-    """Save RMSE/MAE metrics to PostgreSQL for Grafana."""
     engine = get_engine()
     row = pd.DataFrame(
         [
@@ -187,10 +160,8 @@ def save_metrics_to_db(metrics: dict, run_id: str):
 
 @task(name="run-evidently-report")
 def run_evidently_report(results: pd.DataFrame):
-    """Generate Evidently drift report and save metrics to PostgreSQL."""
     feature_cols = ["geo_windspeed_10m", "geo_windspeed_30m", "predicted_kwh"]
 
-    # Save current batch as reference if none exists yet
     if not os.path.exists(REFERENCE_PATH):
         os.makedirs(BATCH_DATA_DIR, exist_ok=True)
         results[feature_cols].to_parquet(REFERENCE_PATH, index=False)
@@ -207,12 +178,10 @@ def run_evidently_report(results: pd.DataFrame):
         Dataset.from_pandas(reference, data_definition=definition),
     )
 
-    # Save HTML report
     report_path = os.path.join(BATCH_DATA_DIR, "drift_report.html")
     run.save_html(report_path)
     print(f"Saved drift report to {report_path}")
 
-    # Extract and save metrics to DB
     run_time = datetime.now(timezone.utc)
     json_data = run.dict()
     result_data = []
@@ -239,18 +208,15 @@ def run_evidently_report(results: pd.DataFrame):
         )
         print(f"Saved {len(result_data)} Evidently metrics to database")
 
-    # Update reference to current
     results[feature_cols].to_parquet(REFERENCE_PATH, index=False)
 
 
 @task(name="check-retraining-trigger")
 async def check_retraining_trigger(metrics: dict):
-    """Trigger retraining flow if RMSE exceeds threshold."""
     if metrics["rmse"] > RMSE_THRESHOLD:
         print(
             f"RMSE {metrics['rmse']:.0f} exceeds threshold {RMSE_THRESHOLD:.0f} — triggering retraining"
         )
-        # Log to DB as a retraining event
         engine = get_engine()
         pd.DataFrame(
             [
@@ -262,7 +228,6 @@ async def check_retraining_trigger(metrics: dict):
                 }
             ]
         ).to_sql("batch_metrics", engine, if_exists="append", index=False)
-        # Actually trigger the training deployment (timeout=0 = fire-and-forget)
         await run_deployment(
             "wind-production-training/wind-production-training", timeout=0
         )
@@ -271,14 +236,8 @@ async def check_retraining_trigger(metrics: dict):
         print(f"RMSE {metrics['rmse']:.0f} within threshold — no retraining needed")
 
 
-# ---------------------------------------------------------------------------
-# Main flow
-# ---------------------------------------------------------------------------
-
-
 @flow(name="wind-batch-prediction")
 def batch_flow():
-    """Scheduled batch prediction, monitoring and retraining trigger."""
     model, run_id = load_latest_model()
     df = load_and_prepare_data(DATA_DIR)
     results = run_batch_predictions(model, df)
@@ -293,5 +252,5 @@ def batch_flow():
 if __name__ == "__main__":
     batch_flow.serve(
         name="wind-batch-daily",
-        cron="0 6 * * *",  # runs every day at 6:00 AM
+        cron="0 6 * * *",
     )

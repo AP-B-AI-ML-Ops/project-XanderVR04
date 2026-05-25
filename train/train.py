@@ -1,7 +1,3 @@
-"""Wind energy production forecasting - training pipeline."""
-
-# pylint: disable=import-error
-
 import os
 
 import mlflow
@@ -14,10 +10,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI", "http://experiment-tracking:5000"
 )
@@ -27,32 +19,22 @@ DATA_DIR = os.getenv("DATA_DIR", "/data")
 RMSE_THRESHOLD = float(os.getenv("RMSE_THRESHOLD", "150000"))
 
 
-# ---------------------------------------------------------------------------
-# Tasks
-# ---------------------------------------------------------------------------
-
-
 @task(name="load-and-join-data")
 def load_and_join_data(data_dir: str) -> pd.DataFrame:
-    """Load wind and production CSVs and join them on date."""
     wind_path = os.path.join(data_dir, "wind.csv")
     prod_path = os.path.join(data_dir, "production.csv")
 
     wind_df = pd.read_csv(wind_path, na_values=["NULL"])
     prod_df = pd.read_csv(prod_path)
 
-    # Parse timestamps
     wind_df["date"] = pd.to_datetime(wind_df["date"]).dt.date
     prod_df["tijd"] = pd.to_datetime(prod_df["tijd"], utc=True)
     prod_df["date"] = prod_df["tijd"].dt.date
 
-    # Keep only geo columns (best coverage)
     wind_df = wind_df[["date", "geo_windspeed_10m", "geo_windspeed_30m"]].dropna()
 
-    # Join on date
     df = prod_df.merge(wind_df, on="date", how="inner")
 
-    # Drop rows with missing target
     df = df.dropna(subset=["vlaanderen wind kwh"])
 
     return df
@@ -60,14 +42,12 @@ def load_and_join_data(data_dir: str) -> pd.DataFrame:
 
 @task(name="engineer-features")
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Extract time-based features from the timestamp."""
     df = df.copy()
     df["hour"] = df["tijd"].dt.hour
     df["day_of_week"] = df["tijd"].dt.dayofweek
     df["month"] = df["tijd"].dt.month
     df["is_weekend"] = (df["day_of_week"] >= 5).astype(int)
 
-    # Wind speed ratio as additional feature
     df["wind_speed_ratio"] = df["geo_windspeed_30m"] / (df["geo_windspeed_10m"] + 0.001)
 
     return df
@@ -75,7 +55,6 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 @task(name="split-data")
 def split_data(df: pd.DataFrame):
-    """Split into train and test sets."""
     feature_cols = [
         "geo_windspeed_10m",
         "geo_windspeed_30m",
@@ -99,7 +78,6 @@ def split_data(df: pd.DataFrame):
 
 @task(name="train-model")
 def train_model(x_train, y_train, params: dict) -> RandomForestRegressor:
-    """Train a Random Forest regressor."""
     model = RandomForestRegressor(
         n_estimators=params["n_estimators"],
         max_depth=params["max_depth"],
@@ -113,7 +91,6 @@ def train_model(x_train, y_train, params: dict) -> RandomForestRegressor:
 
 @task(name="evaluate-model")
 def evaluate_model(model, x_test, y_test) -> dict:
-    """Compute evaluation metrics."""
     y_pred = model.predict(x_test)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     mae = mean_absolute_error(y_test, y_pred)
@@ -123,7 +100,6 @@ def evaluate_model(model, x_test, y_test) -> dict:
 
 @task(name="register-best-model")
 def register_best_model(run_id: str, metrics: dict):
-    """Register model in MLFlow model registry if it meets the threshold."""
     if metrics["rmse"] <= RMSE_THRESHOLD:
         model_uri = f"runs:/{run_id}/model"
         mlflow.register_model(model_uri=model_uri, name=MODEL_NAME)
@@ -134,25 +110,17 @@ def register_best_model(run_id: str, metrics: dict):
         )
 
 
-# ---------------------------------------------------------------------------
-# Main flow
-# ---------------------------------------------------------------------------
-
-
 @flow(name="wind-production-training")
 def train_flow():
-    """Full training pipeline: load, feature engineer, HPO, track, register."""
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    # Load and prepare data
     df = load_and_join_data(DATA_DIR)
     df = engineer_features(df)
     x_train, x_test, y_train, y_test = split_data(df)
 
     print(f"Training on {len(x_train)} rows, testing on {len(x_test)} rows")
 
-    # Hyperparameter grid
     param_grid = [
         {"n_estimators": 100, "max_depth": 10, "min_samples_split": 2},
         {"n_estimators": 200, "max_depth": 15, "min_samples_split": 2},
@@ -175,7 +143,6 @@ def train_flow():
 
             mlflow.log_metrics(metrics)
 
-            # Log model with signature
             signature = infer_signature(x_train, model.predict(x_train))
             mlflow.sklearn.log_model(model, "model", signature=signature)
 
