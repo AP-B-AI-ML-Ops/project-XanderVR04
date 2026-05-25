@@ -5,11 +5,11 @@ datasources:
     uid: postgres-metrics
     type: postgres
     url: database:5432
-    database: metrics
     user: ${POSTGRES_USER}
     secureJsonData:
       password: ${POSTGRES_PASSWORD}
     jsonData:
+      database: metrics
       sslmode: disable
       postgresVersion: 1600
     isDefault: true

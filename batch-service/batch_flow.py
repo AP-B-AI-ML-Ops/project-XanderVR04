@@ -146,6 +146,21 @@ def save_predictions_parquet(results: pd.DataFrame):
     return filepath
 
 
+@task(name="save-predictions-to-db")
+def save_predictions_to_db(results: pd.DataFrame):
+    """Save daily aggregated predictions and actuals to PostgreSQL for Grafana."""
+    engine = get_engine()
+    results["date"] = pd.to_datetime(results["tijd"]).dt.date
+    daily = (
+        results.groupby("date")
+        .agg(actual_kwh=("actual_kwh", "sum"), predicted_kwh=("predicted_kwh", "sum"))
+        .reset_index()
+    )
+    daily["run_time"] = datetime.now(timezone.utc)
+    daily.to_sql("daily_predictions", engine, if_exists="append", index=False)
+    print(f"Saved {len(daily)} daily prediction rows to database")
+
+
 @task(name="save-metrics-to-db")
 def save_metrics_to_db(metrics: dict, run_id: str):
     """Save RMSE/MAE metrics to PostgreSQL for Grafana."""
@@ -269,6 +284,7 @@ def batch_flow():
     results = run_batch_predictions(model, df)
     metrics = compute_metrics(results)
     save_predictions_parquet(results)
+    save_predictions_to_db(results)
     save_metrics_to_db(metrics, run_id)
     run_evidently_report(results)
     check_retraining_trigger(metrics)

@@ -13,7 +13,10 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\)['dashboard']; [print\\(json.dumps\\(p['targets'][0], indent=2\\)\\) for p in d['panels']]\")",
       "Bash(python -m pre_commit install)",
       "Bash(python -m pre_commit autoupdate)",
-      "Bash(python -m pre_commit run --all-files)"
+      "Bash(python -m pre_commit run --all-files)",
+      "Bash(curl -s -u admin:admin http://localhost:3400/api/datasources/uid/postgres-metrics/health)",
+      "Bash(curl -s -u admin:admin http://localhost:3400/api/search?type=dash-db)",
+      "Bash(timeout 25 bash -c \"until docker compose logs grafana 2>&1 | grep -q 'HTTP Server Listen'; do sleep 2; done\")"
     ]
   }
 }
