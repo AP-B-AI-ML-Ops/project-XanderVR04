@@ -82,6 +82,7 @@ services:
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./grafana/provisioning/dashboards:/opt/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
       - batch-data:/batch-data
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
@@ -92,6 +93,7 @@ volumes:
   postgres-data:
   batch-data:
   mlflow-artifacts:
+  grafana-data:
   grafana-data-config-datasources:
   grafana-data-config-dashboards:
   grafana-data-dashboards:

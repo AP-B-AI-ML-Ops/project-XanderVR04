@@ -23,7 +23,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "cflu1g2zos5q8e"
+        "uid": "postgres-metrics"
       },
       "fieldConfig": {
         "defaults": {
@@ -104,11 +104,11 @@
       "pluginVersion": "12.4.2",
       "targets": [
         {
-          "dataset": "metrics",
+          "dataset": "",
           "editorMode": "code",
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  run_time AS time,\r\n  value::float AS mae\r\nFROM batch_metrics\r\nWHERE metric_name = 'mae'\r\nORDER BY run_time",
+          "rawSql": "SELECT run_time::timestamptz AS time, value::float AS mae\r\nFROM batch_metrics\r\nWHERE metric_name = 'mae'\r\nORDER BY run_time",
           "refId": "A",
           "sql": {
             "columns": [
@@ -129,13 +129,13 @@
           }
         }
       ],
-      "title": "Wind Production MAE over time",
+      "title": "MAE",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "cflu1g2zos5q8e"
+        "uid": "postgres-metrics"
       },
       "fieldConfig": {
         "defaults": {
@@ -216,15 +216,15 @@
       "pluginVersion": "12.4.2",
       "targets": [
         {
-          "dataset": "metrics",
+          "dataset": "",
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "cflu1g2zos5q8e"
+            "uid": "postgres-metrics"
           },
           "editorMode": "code",
-          "format": "table",
+          "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  run_time AS time,\r\n  value::float AS rmse\r\nFROM batch_metrics\r\nWHERE metric_name = 'rmse'\r\nORDER BY run_time",
+          "rawSql": "SELECT run_time::timestamptz AS time, value::float AS rmse\r\nFROM batch_metrics\r\nWHERE metric_name = 'rmse'\r\nORDER BY run_time",
           "refId": "A",
           "sql": {
             "columns": [
@@ -245,7 +245,7 @@
           }
         }
       ],
-      "title": "Wind Production RMSE over time",
+      "title": "RMSE",
       "type": "timeseries"
     }
   ],
@@ -256,13 +256,13 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-5y",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Wind Production Monitoring",
   "uid": "adkx6s7",
-  "version": 4,
+  "version": 1,
   "weekStart": ""
 }

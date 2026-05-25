@@ -1,18 +1,11 @@
-[tool.pylint.messages_control]
-disable = [
-    "missing-function-docstring",
-    "missing-class-docstring",
-    "C0103",
-    "R0801"
-]
-
-[tool.black]
-line-length = 88
-target-version = ["py311"]
-
-[tool.isort]
-profile = "black"
-
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501", "F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

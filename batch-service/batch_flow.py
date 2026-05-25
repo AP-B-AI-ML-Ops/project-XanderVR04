@@ -4,7 +4,7 @@
 # pylint: disable=line-too-long
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import mlflow
 import mlflow.sklearn
@@ -120,7 +120,7 @@ def run_batch_predictions(model, df: pd.DataFrame) -> pd.DataFrame:
     results["actual_kwh"] = df["vlaanderen wind kwh"].values
     results["predicted_kwh"] = predictions
     results["error"] = results["actual_kwh"] - results["predicted_kwh"]
-    results["predicted_at"] = datetime.utcnow()
+    results["predicted_at"] = datetime.now(timezone.utc)
 
     return results
 
@@ -137,7 +137,7 @@ def compute_metrics(results: pd.DataFrame) -> dict:
 @task(name="save-predictions-parquet")
 def save_predictions_parquet(results: pd.DataFrame):
     """Save predictions to parquet in the shared batch-data volume."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     path = os.path.join(BATCH_DATA_DIR, f"{now.year:04d}/{now.month:02d}")
     os.makedirs(path, exist_ok=True)
     filepath = os.path.join(path, f"{now.strftime('%Y%m%d_%H%M%S')}.parquet")
@@ -153,13 +153,13 @@ def save_metrics_to_db(metrics: dict, run_id: str):
     row = pd.DataFrame(
         [
             {
-                "run_time": datetime.utcnow(),
+                "run_time": datetime.now(timezone.utc),
                 "run_id": run_id,
                 "metric_name": "rmse",
                 "value": str(metrics["rmse"]),
             },
             {
-                "run_time": datetime.utcnow(),
+                "run_time": datetime.now(timezone.utc),
                 "run_id": run_id,
                 "metric_name": "mae",
                 "value": str(metrics["mae"]),
@@ -198,7 +198,7 @@ def run_evidently_report(results: pd.DataFrame):
     print(f"Saved drift report to {report_path}")
 
     # Extract and save metrics to DB
-    run_time = datetime.utcnow()
+    run_time = datetime.now(timezone.utc)
     json_data = run.dict()
     result_data = []
     for metric in json_data.get("metrics", []):
@@ -240,7 +240,7 @@ async def check_retraining_trigger(metrics: dict):
         pd.DataFrame(
             [
                 {
-                    "run_time": datetime.utcnow(),
+                    "run_time": datetime.now(timezone.utc),
                     "run_id": "retraining_trigger",
                     "metric_name": "retraining_triggered",
                     "value": str(metrics["rmse"]),
