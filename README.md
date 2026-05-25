@@ -120,7 +120,9 @@ The web service is ready when you see `Running on http://0.0.0.0:9696`. The batc
 
 Open http://localhost:4200 and go to **Deployments** -> `wind-batch-daily` -> **Run** -> **Quick Run**.
 
-Check it completed:
+After triggering, refresh the Prefect page after about 30 seconds. The run will appear with a green status and marked as "Completed" when it finished successfully.
+
+You can also verify via logs:
 
 ```bash
 docker compose logs batch-service --tail=30
@@ -144,7 +146,7 @@ curl -X POST http://localhost:9696/predict \
 
 ### 9. View the monitoring dashboard
 
-Open Grafana at http://localhost:3400, log in with `admin` / `admin`, and open the **Wind Production Monitoring** dashboard.
+Open Grafana at http://localhost:3400, log in with `admin` / `admin`, and open the **Wind Production Monitoring** dashboard. You can click and drag on any time series panel to zoom into a specific time range, and double-click to zoom back out.
 
 ---
 
